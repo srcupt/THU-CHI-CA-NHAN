@@ -67,6 +67,29 @@
   .hrow { display: grid; grid-template-columns: minmax(90px, 230px) 1fr 96px; gap: 10px; align-items: center; padding: 4px 0; }
   .hrow > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .hrow i { display: block; height: 14px; min-width: 2px; border-radius: 0 4px 4px 0; background: var(--s1); }
+  /* tab Phân tích */
+  :root { --c0: #898781; --c1: #2a78d6; --c2: #eb6834; --c3: #1baf7a; --c4: #eda100; --c5: #e87ba4; --c6: #008300; --c7: #4a3aa7; }
+  @media (prefers-color-scheme: dark) { :root { --c1: #3987e5; --c2: #d95926; --c3: #199e70; --c4: #c98500; --c5: #d55181; --c7: #9085e9; } }
+  .seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; }
+  .seg button.on { background: var(--btn); color: #fff; font-weight: 600; }
+  .agrid { display: grid; grid-template-columns: 3fr 2fr; gap: 14px; align-items: start; }
+  @media (max-width: 800px) { .agrid { grid-template-columns: 1fr; gap: 0; } }
+  .col { flex: 1; height: 100%; display: flex; align-items: flex-end; justify-content: center; background: none; border: 0; border-radius: 0; padding: 0; }
+  .col:hover, .crow:hover { background: var(--wash); }
+  .col.dim, .crow.dim { opacity: .45; }
+  .stack { width: min(36px, 62%); display: flex; flex-direction: column-reverse; gap: 2px; border-radius: 4px 4px 0 0; overflow: hidden; }
+  .stack i { display: block; min-height: 0; }
+  .xlab b { color: var(--ink); }
+  .crow { display: grid; grid-template-columns: 10px minmax(70px, 1.3fr) 1fr 116px; gap: 8px; align-items: center; width: 100%; text-align: left;
+    background: none; border: 0; padding: 5px 6px; }
+  .crow.on { background: var(--wash); font-weight: 600; }
+  .crow > i { width: 10px; height: 10px; border-radius: 2px; }
+  .crow .cn { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .crow .cb i { display: block; height: 12px; min-width: 2px; border-radius: 0 4px 4px 0; }
+  .crow small { display: block; font-weight: 400; font-size: 12px; color: var(--ink2); }
+  summary { cursor: pointer; font-weight: 600; }
+  details[open] summary { margin-bottom: 10px; }
   #tip { position: fixed; z-index: 9; pointer-events: none; white-space: pre-line; padding: 6px 10px; border-radius: 6px; font-size: 13px;
     background: var(--ink); color: var(--bg); max-width: 260px; }
 </style>
@@ -133,8 +156,14 @@
   </section>
 
   <section id="phan-tich">
-    <p class="hint">Số tiền theo mục và theo tháng. Luân chuyển (tiết kiệm, ví, tài khoản của mình) không tính là thu nhập hay chi tiêu.</p>
-    <div class="card scroll"><table id="tPivot"></table></div>
+    <div class="row" id="aCtl"></div>
+    <p class="hint">Bấm vào một cột tháng hoặc một mục để lọc; bấm lần nữa để bỏ lọc.</p>
+    <div class="agrid">
+      <div class="card"><h2 id="aT1"></h2><div id="aChart"></div></div>
+      <div class="card"><h2 id="aT2"></h2><div id="aCats"></div></div>
+    </div>
+    <div class="card scroll"><h2 id="aT3"></h2><table id="aTx"></table></div>
+    <details class="card scroll"><summary>Bảng số liệu đầy đủ (mục × tháng)</summary><table id="tPivot"></table></details>
   </section>
 
   <section id="thong-ke">
@@ -333,7 +362,9 @@ function selfTest() {
 }
 // </logic>
 
-const KEY = 'thuchi.v1', TABS = { 'tong-quan': rOverview, 'giao-dich': rTx, 'doi-tac': rPartners, 'phan-tich': rPivot, 'thong-ke': rStats };
+const KEY = 'thuchi.v1', TABS = { 'tong-quan': rOverview, 'giao-dich': rTx, 'doi-tac': rPartners, 'phan-tich': rAnalysis, 'thong-ke': rStats };
+// Mốc trên của trục: số tròn (1, 2, 2,5, 5, 10 × lũy thừa 10) nhỏ nhất không dưới giá trị lớn nhất
+const niceMax = top => { const u = 10 ** Math.floor(Math.log10(top)); return [1, 2, 2.5, 5, 10].map(f => f * u).find(v => v >= top); };
 const $ = id => document.getElementById(id);
 const fmt = n => n.toLocaleString('vi-VN');
 const fmtM = n => (n / 1e6).toLocaleString('vi-VN', { maximumFractionDigits: 1 }) + ' tr';
@@ -490,8 +521,7 @@ function rOverview() {
     (net > 0 ? `<p class="hint" style="margin:10px 0 0">${fmt(net)} đ đã chuyển ròng sang ví / tiết kiệm. Sao kê ngân hàng không cho biết số này còn nằm đó hay đã tiêu; ` +
       'khoản nào thực chất là mua hàng thì gán lại sang một mục chi tiêu ở tab Đối tác.</p>' : '');
 
-  const pm = perMonth(), top = Math.max(1, ...pm.flatMap(x => [x.thu, x.chi]));
-  const unit = 10 ** Math.floor(Math.log10(top)), max = [1, 2, 2.5, 5, 10].map(f => f * unit).find(v => v >= top);
+  const pm = perMonth(), max = niceMax(Math.max(1, ...pm.flatMap(x => [x.thu, x.chi])));
   const manyYears = new Set(pm.map(x => x.m.slice(0, 4))).size > 1;
   $('chMonth').innerHTML = !pm.length ? '<p class="hint">Chưa có dữ liệu.</p>' :
     '<div class="legend"><span><i style="background:var(--s1)"></i>Thu nhập</span><span><i style="background:var(--s2)"></i>Chi tiêu</span></div><div class="plot">' +
@@ -532,6 +562,65 @@ function rPartners() {
     Object.keys(KINDS).flatMap(k => state.cats.filter(c => c.k === k)).map(c => `<tr data-n="${esc(c.n)}"><td>${esc(c.n)}</td><td><select aria-label="Loại mục">` +
       Object.keys(KINDS).map(k => `<option value="${k}"${k === c.k ? ' selected' : ''}>${KINDS[k]}</option>`).join('') + '</select></td></tr>').join('') + '</table>';
   if (!$('cKind').options.length) $('cKind').innerHTML = Object.keys(KINDS).map(k => `<option value="${k}">${KINDS[k]}</option>`).join('');
+}
+
+// Lựa chọn đang lọc ở tab Phân tích: loại, tháng ('' = cả kỳ), mục ('' = mọi mục)
+const A = { kind: 'chi', m: '', c: '' };
+$('phan-tich').onclick = e => {
+  const d = e.target.closest('button')?.dataset;
+  if (!d) return;
+  if (d.kind) { A.kind = d.kind; A.c = ''; }
+  else if (d.m) A.m = A.m === d.m ? '' : d.m;
+  else if (d.c) A.c = A.c === d.c ? '' : d.c;
+  else return;
+  rAnalysis();
+};
+
+function rAnalysis() {
+  const p = pivot(state), rows = p.sections.find(s => s.k === A.kind).rows; // đã xếp theo tổng giảm dần
+  if (!p.months.includes(A.m)) A.m = '';
+  if (!rows.some(r => r.n === A.c)) A.c = '';
+  const mi = p.months.indexOf(A.m), none = '<p class="hint">Chưa có dữ liệu.</p>';
+  // Màu đi theo mục (7 mục lớn nhất cả kỳ), không đổi khi lọc; các mục còn lại gộp màu xám "Khác"
+  const color = n => { const i = rows.findIndex(r => r.n === n); return i < 7 ? `var(--c${i + 1})` : 'var(--c0)'; };
+
+  $('aCtl').innerHTML = '<div class="seg">' + Object.keys(KINDS).map(k =>
+      `<button data-kind="${k}" class="${k === A.kind ? 'on' : ''}" aria-pressed="${k === A.kind}">${KINDS[k]}</button>`).join('') + '</div>' +
+    (A.m ? `<button data-m="${A.m}">Tháng ${mLabel(A.m)} ✕</button>` : '') + (A.c ? `<button data-c="${esc(A.c)}">${esc(A.c)} ✕</button>` : '');
+
+  const shown = A.c ? rows.filter(r => r.n === A.c) : rows;
+  const tot = p.months.map((_, i) => sum(shown.map(r => r.vals[i]))), max = niceMax(Math.max(1, ...tot));
+  const segs = i => {
+    const out = []; let other = 0;
+    for (const r of shown) if (r.vals[i]) A.c || color(r.n) !== 'var(--c0)' ? out.push([r.n, r.vals[i], color(r.n)]) : other += r.vals[i];
+    if (other) out.push(['Khác', other, 'var(--c0)']);
+    return out;
+  };
+  $('aT1').textContent = `${KINDS[A.kind]} theo tháng` + (A.c ? ` · ${A.c}` : '');
+  $('aChart').innerHTML = !p.months.length ? none : '<div class="plot">' +
+    [1, .5, 0].map(f => `<div class="grid" style="bottom:${f * 100}%"><span>${fmtM(max * f)}</span></div>`).join('') + '<div class="bars">' +
+    p.months.map((m, i) => { const sg = segs(i); return `<button class="col${A.m && A.m !== m ? ' dim' : ''}" data-m="${m}" aria-pressed="${A.m === m}" ` +
+      `aria-label="Tháng ${mLabel(m)}: ${fmt(tot[i])}" data-tip="${esc(`Tháng ${mLabel(m)}\nTổng: ${fmt(tot[i])}` + sg.map(s => `\n${s[0]}: ${fmt(s[1])}`).join(''))}">` +
+      `<span class="stack" style="height:${tot[i] / max * 100}%">${sg.map(s => `<i style="flex:${s[1]} 0 0;background:${s[2]}"></i>`).join('')}</span></button>`; }).join('') +
+    '</div></div><div class="xlab">' + p.months.map(m => `<span>${A.m === m ? `<b>${mLabel(m).slice(0, 2)}</b>` : mLabel(m).slice(0, 2)}</span>`).join('') + '</div>';
+
+  const list = rows.map(r => ({ r, v: mi < 0 ? sum(r.vals) : r.vals[mi] })).filter(x => x.v || x.r.n === A.c).sort((a, b) => b.v - a.v);
+  const big = Math.max(1, ...list.map(x => x.v)), all = sum(list.map(x => x.v)) || 1;
+  $('aT2').textContent = `Theo mục · ${A.m ? 'tháng ' + mLabel(A.m) : 'cả kỳ'}`;
+  $('aCats').innerHTML = (mi > 0 ? '<p class="hint">Số sau dấu chấm: thay đổi so với tháng trước.</p>' : '') + (list.length ? list.map(({ r, v }) => {
+    const d = mi > 0 ? v - r.vals[mi - 1] : null;
+    return `<button class="crow${A.c === r.n ? ' on' : A.c ? ' dim' : ''}" data-c="${esc(r.n)}" aria-pressed="${A.c === r.n}" data-tip="${esc(r.n)}\n${fmt(v)} đ">` +
+      `<i style="background:${color(r.n)}"></i><span class="cn">${esc(r.n)}</span><span class="cb"><i style="width:${v / big * 100}%;background:${color(r.n)}"></i></span>` +
+      `<span class="n">${fmt(v)}<small>${(v / all * 100).toFixed(1)}%${d == null ? '' : ` · ${d > 0 ? '+' : d < 0 ? '−' : ''}${fmt(Math.abs(d))}`}</small></span></button>`;
+  }).join('') : none);
+
+  const on = A.m || A.c;
+  const txs = on ? state.tx.filter(t => kindOf(state, t) === A.kind && (!A.m || t.d.startsWith(A.m)) && (!A.c || (t.g || NONE) === A.c)) : [];
+  $('aT3').textContent = on ? `Giao dịch (${txs.length}) · tổng ${fmt(sum(txs.map(t => t.no || t.co)))} đ` : 'Giao dịch';
+  $('aTx').innerHTML = !on ? '<tr><td style="border:0;color:var(--ink2)">Bấm vào một cột tháng hoặc một mục ở trên để xem các giao dịch tương ứng.</td></tr>'
+    : '<tr><th>Ngày</th><th>Đối tác / Nội dung</th><th>Mục</th><th class="n">Số tiền</th></tr>' +
+      txs.toReversed().map(t => `<tr><td>${dmy(t.d)}</td><td class="nd">${esc(t.dt)}<small>${esc(t.nd)}</small></td><td>${esc(t.g || NONE)}</td><td class="n">${fmt(t.no || t.co)}</td></tr>`).join('');
+  rPivot();
 }
 
 function rPivot() {
